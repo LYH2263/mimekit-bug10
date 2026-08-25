@@ -2,6 +2,7 @@ package mimekit
 
 import (
 	"context"
+	"fmt"
 	"sync"
 )
 
@@ -71,16 +72,16 @@ func (p *Pipeline) runStages(ctx context.Context, raw []byte) (*Message, error) 
 	cs := CharsetLabel(st.headers)
 	text, err := convertCharset(ctx, decoded, cs, "utf-8")
 	if err != nil {
-		text = decoded
+		// charset 转换失败不得把 transfer 解码原文回填进 Body，也不得返回
+		// 非 nil Message——否则仅判 msg!=nil 的上层会把失败件当成功入库。
+		// 与 MaterializeBody「失败路径不得污染部件」契约保持一致。
+		return nil, fmt.Errorf("%w: %v", ErrCharset, err)
 	}
 	root := &Part{
 		Headers:   st.headers.Clone(),
 		RawBody:   append([]byte(nil), body...),
 		Body:      text,
 		MediaType: MediaTypeOf(st.headers),
-	}
-	if err != nil {
-		return &Message{Headers: st.headers.Clone(), Root: root}, err
 	}
 	if isMultipart(root.MediaType) {
 		boundary, err := extractBoundary(st.headers.Get("Content-Type"))
